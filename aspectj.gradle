@@ -1,0 +1,67 @@
+buildscript {
+    repositories {
+        maven { url 'https://maven.aliyun.com/nexus/content/groups/public/' }
+        google()
+        mavenCentral()
+    }
+
+}
+
+// app 和 lib 属性不同
+def variants = null
+if (project.android.hasProperty("applicationVariants")) {
+    variants = project.android.applicationVariants
+} else if (project.android.hasProperty("libraryVariants")) {
+    variants = project.android.libraryVariants
+}
+
+variants.all { variant ->
+    variant.outputs.all { output ->
+        def fullName = ""
+        output.name.tokenize('-').eachWithIndex { token, index ->
+            fullName = fullName + (index == 0 ? token : token.capitalize())
+        }
+
+        JavaCompile javaCompile = variant.javaCompileProvider.get()
+        javaCompile.doLast {
+            String[] javaArgs = ["-showWeaveInfo",
+                                 "-1.8",
+                                 "-inpath", javaCompile.destinationDir.toString(),
+                                 "-aspectpath", javaCompile.classpath.asPath,
+                                 "-d", javaCompile.destinationDir.toString(),
+                                 "-classpath", javaCompile.classpath.asPath,
+                                 "-bootclasspath", project.android.bootClasspath.join(File.pathSeparator)]
+            println "ajc javaArgs: " + Arrays.toString(javaArgs)
+            String[] kotlinArgs = ["-showWeaveInfo",
+                                   "-1.8",
+                                   "-inpath", project.buildDir.path + "/tmp/kotlin-classes/" + fullName,
+                                   "-aspectpath", javaCompile.classpath.asPath,
+                                   "-d", project.buildDir.path + "/tmp/kotlin-classes/" + fullName,
+                                   "-classpath", javaCompile.classpath.asPath,
+                                   "-bootclasspath", project.android.bootClasspath.join(
+                    File.pathSeparator)]
+            println "ajc kotlinArgs: " + Arrays.toString(kotlinArgs)
+
+            def wv = configurations.create("weaving")
+            dependencies {
+                weaving 'org.aspectj:aspectjtools:1.9.8'
+            }
+            try {
+                javaexec {
+                    classpath = wv
+                    main = "org.aspectj.tools.ajc.Main"
+                    args javaArgs
+                }
+            } catch (Exception ignored) {
+            }
+            try {
+                javaexec {
+                    classpath = wv
+                    main = "org.aspectj.tools.ajc.Main"
+                    args kotlinArgs
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+}
